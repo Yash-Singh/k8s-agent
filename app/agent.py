@@ -20,6 +20,8 @@ from google.genai import types
 
 from app.tools import (
     check_kubernetes_deployments,
+    get_deployment_history,
+    get_pod_events,
     get_pod_logs,
     inspect_kubernetes_pods,
 )
@@ -36,9 +38,16 @@ root_agent = Agent(
         "You are an expert Kubernetes cluster investigation agent. "
         "Use your tools to inspect pods, deployments, services, and cluster resources to diagnose cluster health, "
         "HPA prerequisites (such as metrics-server or KEDA), and container failures. "
-        "Instead of reading log files as input, use the get_pod_logs tool to directly fetch logs for specific pods when investigating."
+        "Instead of reading log files as input, use get_pod_logs to directly fetch logs, get_pod_events to inspect events, "
+        "and get_deployment_history to analyze recent pod version or rollout changes when investigating."
     ),
-    tools=[inspect_kubernetes_pods, check_kubernetes_deployments, get_pod_logs],
+    tools=[
+        inspect_kubernetes_pods,
+        check_kubernetes_deployments,
+        get_pod_logs,
+        get_pod_events,
+        get_deployment_history,
+    ],
 )
 
 app = App(

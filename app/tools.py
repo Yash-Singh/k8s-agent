@@ -73,6 +73,56 @@ def get_pod_logs(
         return f"Failed to retrieve pod logs: {str(e)}"
 
 
+def get_pod_events(pod_name: str, namespace: str = "default") -> str:
+    """Fetch Kubernetes events related to a specific pod for troubleshooting.
+
+    Args:
+        pod_name: Name of the pod to fetch events for.
+        namespace: Kubernetes namespace where the pod is running. Defaults to 'default'.
+
+    Returns:
+        Formatted string listing events (Type, Reason, Age/Timestamp, Component, Message)
+        for the given pod, or an informational/error message.
+    """
+    try:
+        core_v1, _ = _get_k8s_apis()
+        field_selector = f"involvedObject.name={pod_name},involvedObject.kind=Pod"
+        events = core_v1.list_namespaced_event(namespace=namespace, field_selector=field_selector)
+
+        if not events.items:
+            events = core_v1.list_namespaced_event(
+                namespace=namespace, field_selector=f"involvedObject.name={pod_name}"
+            )
+
+        if not events.items:
+            return f"No events found for pod '{pod_name}' in namespace '{namespace}'."
+
+        sorted_events = sorted(
+            events.items,
+            key=lambda e: str(e.last_timestamp or e.event_time or e.first_timestamp or ""),
+        )
+
+        lines = [f"{'TYPE':<10} {'REASON':<20} {'AGE/TIME':<25} {'FROM':<20} {'MESSAGE'}"]
+        for event in sorted_events:
+            event_type = event.type or "Normal"
+            reason = event.reason or "Unknown"
+            timestamp = str(event.last_timestamp or event.event_time or event.first_timestamp or "<unknown>")
+            source = (
+                event.source.component
+                if event.source and event.source.component
+                else (event.reporting_component or "<unknown>")
+            )
+            count_str = f" (x{event.count})" if event.count and event.count > 1 else ""
+            message = f"{event.message or ''}{count_str}"
+            lines.append(f"{event_type:<10} {reason:<20} {timestamp:<25} {source:<20} {message}")
+
+        return "\n".join(lines)
+    except ApiException as e:
+        return f"Kubernetes API error fetching events ({e.status}): {e.reason} - {e.body}"
+    except Exception as e:
+        return f"Failed to retrieve pod events: {str(e)}"
+
+
 def inspect_kubernetes_pods(namespace: str = "all", name_filter: str = "") -> str:
     """Inspect pods across namespaces or in a specific namespace on the active Kubernetes cluster.
 
@@ -158,3 +208,135 @@ def check_kubernetes_deployments(namespace: str = "all") -> str:
         return f"Kubernetes API error querying deployments ({e.status}): {e.reason} - {e.body}"
     except Exception as e:
         return f"Failed to query deployments: {str(e)}"
+
+
+def get_deployment_history(deployment_name: str, namespace: str = "default") -> str:
+    """Fetch and analyze the rollout revision history of a deployment to detect recent changes in pod versions/images.
+
+    Args:
+        deployment_name: Name of the Kubernetes deployment.
+        namespace: Kubernetes namespace where the deployment lives. Defaults to 'default'.
+
+    Returns:
+        Formatted summary showing rollout revisions, timestamps, container images (pod versions),
+        and detected differences across recent revisions.
+    """
+    try:
+        _, apps_v1 = _get_k8s_apis()
+        try:
+            dep = apps_v1.read_namespaced_deployment(name=deployment_name, namespace=namespace)
+        except ApiException as e:
+            return f"Kubernetes API error fetching deployment '{deployment_name}' ({e.status}): {e.reason} - {e.body}"
+
+        # Fetch all replica sets in the namespace
+        rs_list = apps_v1.list_namespaced_replica_set(namespace=namespace)
+
+        # Filter ReplicaSets owned by this deployment
+        dep_uid = dep.metadata.uid if dep.metadata else None
+        matching_rs = []
+        for rs in rs_list.items:
+            is_owned = False
+            if rs.metadata and rs.metadata.owner_references:
+                for owner in rs.metadata.owner_references:
+                    if owner.kind == "Deployment" and (
+                        (dep_uid and owner.uid == dep_uid) or owner.name == deployment_name
+                    ):
+                        is_owned = True
+                        break
+            if is_owned:
+                matching_rs.append(rs)
+
+        if not matching_rs:
+            return f"No rollout history (ReplicaSets) found for deployment '{deployment_name}' in namespace '{namespace}'."
+
+        revisions_data = []
+        for rs in matching_rs:
+            annotations = rs.metadata.annotations or {} if rs.metadata else {}
+            rev_str = annotations.get("deployment.kubernetes.io/revision", "0")
+            try:
+                rev_num = int(rev_str)
+            except ValueError:
+                rev_num = 0
+
+            change_cause = annotations.get("kubernetes.io/change-cause", "<none>")
+            creation_time = str(rs.metadata.creation_timestamp or "<unknown>") if rs.metadata else "<unknown>"
+
+            # Extract container images
+            container_images = {}
+            if (
+                rs.spec
+                and rs.spec.template
+                and rs.spec.template.spec
+                and rs.spec.template.spec.containers
+            ):
+                for c in rs.spec.template.spec.containers:
+                    container_images[c.name] = c.image
+
+            replicas = rs.status.replicas if rs.status and rs.status.replicas is not None else 0
+            ready_replicas = rs.status.ready_replicas if rs.status and rs.status.ready_replicas is not None else 0
+            is_active = (replicas > 0)
+
+            revisions_data.append({
+                "rev_num": rev_num,
+                "rev_str": rev_str,
+                "rs_name": rs.metadata.name if rs.metadata else "",
+                "creation_time": creation_time,
+                "change_cause": change_cause,
+                "images": container_images,
+                "replicas": replicas,
+                "ready_replicas": ready_replicas,
+                "is_active": is_active,
+            })
+
+        # Sort chronologically by revision number
+        revisions_data.sort(key=lambda r: r["rev_num"])
+
+        # Format output
+        output_lines = [
+            f"=== Rollout History for Deployment '{deployment_name}' (Namespace: '{namespace}') ===",
+            "",
+            f"{'REVISION':<10} {'ACTIVE':<8} {'CREATED':<25} {'CONTAINER(S) & IMAGE':<50} {'CHANGE CAUSE'}",
+        ]
+
+        for rev in revisions_data:
+            active_marker = "YES" if rev["is_active"] else "no"
+            images_str = ", ".join(f"{c}: {img}" for c, img in rev["images"].items())
+            output_lines.append(
+                f"{rev['rev_str']:<10} {active_marker:<8} {rev['creation_time']:<25} {images_str:<50} {rev['change_cause']}"
+            )
+
+        # Version change analysis
+        output_lines.append("")
+        output_lines.append("=== Pod Version Change Analysis ===")
+        if len(revisions_data) > 1:
+            latest = revisions_data[-1]
+            prev = revisions_data[-2]
+            changes_detected = False
+
+            # Check for container image updates
+            all_containers = set(latest["images"].keys()).union(set(prev["images"].keys()))
+            for c_name in sorted(all_containers):
+                prev_img = prev["images"].get(c_name, "<not present>")
+                latest_img = latest["images"].get(c_name, "<not present>")
+                if prev_img != latest_img:
+                    output_lines.append(
+                        f"• Container '{c_name}': Updated from '{prev_img}' (Revision {prev['rev_str']}) to '{latest_img}' (Revision {latest['rev_str']})"
+                    )
+                    changes_detected = True
+
+            if not changes_detected:
+                output_lines.append(
+                    f"• No container image change detected between Revision {prev['rev_str']} and Revision {latest['rev_str']} (configmap/secret/replica change)."
+                )
+        else:
+            current_rev = revisions_data[0]
+            current_images = ", ".join(f"{c}: {img}" for c, img in current_rev["images"].items())
+            output_lines.append(
+                f"• Single revision deployed (Revision {current_rev['rev_str']}). Current pod image: {current_images}."
+            )
+
+        return "\n".join(output_lines)
+    except ApiException as e:
+        return f"Kubernetes API error querying deployment history ({e.status}): {e.reason} - {e.body}"
+    except Exception as e:
+        return f"Failed to retrieve deployment history: {str(e)}"
