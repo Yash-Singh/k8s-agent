@@ -86,7 +86,14 @@ def format_and_output(
             print(report_text)
     else:  # 'rich' default terminal format
         console_obj.print()
-        console_obj.print(Markdown(report_text))
+        console_obj.print(
+            Panel(
+                Markdown(report_text.strip()),
+                box=box.ROUNDED,
+                border_style="cyan",
+                padding=(1, 2),
+            )
+        )
         console_obj.print()
         if output_path:
             output_path.write_text(report_text, encoding="utf-8")
@@ -110,7 +117,14 @@ async def interactive_loop(console_obj: Console) -> None:
 
             response = await execute_agent_query(user_input, console_obj)
             console_obj.print()
-            console_obj.print(Markdown(response))
+            console_obj.print(
+                Panel(
+                    Markdown(response.strip()),
+                    box=box.ROUNDED,
+                    border_style="cyan",
+                    padding=(1, 2),
+                )
+            )
             console_obj.print()
         except (KeyboardInterrupt, EOFError):
             console_obj.print("\n[yellow]Session interrupted. Goodbye![/yellow]")
