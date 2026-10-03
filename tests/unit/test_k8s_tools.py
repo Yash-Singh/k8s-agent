@@ -1,7 +1,9 @@
 """Unit tests for Kubernetes interaction tools in app/tools.py."""
 
 from unittest.mock import MagicMock, patch
+
 from kubernetes.client.exceptions import ApiException
+
 from app.tools import (
     check_kubernetes_deployments,
     get_deployment_history,
@@ -13,10 +15,18 @@ from app.tools import (
 
 def test_get_pod_logs_success():
     mock_core_v1 = MagicMock()
-    mock_core_v1.read_namespaced_pod_log.return_value = "line 1: service starting\nline 2: connected to db"
+    mock_core_v1.read_namespaced_pod_log.return_value = (
+        "line 1: service starting\nline 2: connected to db"
+    )
 
     with patch("app.tools._get_k8s_apis", return_value=(mock_core_v1, MagicMock())):
-        logs = get_pod_logs("auth-service-pod", namespace="prod", container="backend", previous=True, tail=50)
+        logs = get_pod_logs(
+            "auth-service-pod",
+            namespace="prod",
+            container="backend",
+            previous=True,
+            tail=50,
+        )
 
     mock_core_v1.read_namespaced_pod_log.assert_called_once_with(
         name="auth-service-pod",
@@ -41,7 +51,9 @@ def test_get_pod_logs_empty():
 
 def test_get_pod_logs_api_exception():
     mock_core_v1 = MagicMock()
-    mock_core_v1.read_namespaced_pod_log.side_effect = ApiException(status=404, reason="Not Found")
+    mock_core_v1.read_namespaced_pod_log.side_effect = ApiException(
+        status=404, reason="Not Found"
+    )
 
     with patch("app.tools._get_k8s_apis", return_value=(mock_core_v1, MagicMock())):
         result = get_pod_logs("nonexistent-pod", namespace="default")
@@ -177,7 +189,9 @@ def test_get_pod_events_empty():
 
 def test_get_pod_events_api_exception():
     mock_core_v1 = MagicMock()
-    mock_core_v1.list_namespaced_event.side_effect = ApiException(status=403, reason="Forbidden")
+    mock_core_v1.list_namespaced_event.side_effect = ApiException(
+        status=403, reason="Forbidden"
+    )
 
     with patch("app.tools._get_k8s_apis", return_value=(mock_core_v1, MagicMock())):
         output = get_pod_events("my-pod", namespace="default")
@@ -243,7 +257,10 @@ def test_get_deployment_history_success_with_version_change():
     assert "my-registry.io/web:v1.1.0" in output
     assert "YES" in output  # Revision 2 is active
     assert "Pod Version Change Analysis" in output
-    assert "Updated from 'my-registry.io/web:v1.0.0' (Revision 1) to 'my-registry.io/web:v1.1.0' (Revision 2)" in output
+    assert (
+        "Updated from 'my-registry.io/web:v1.0.0' (Revision 1) to 'my-registry.io/web:v1.1.0' (Revision 2)"
+        in output
+    )
 
 
 def test_get_deployment_history_single_revision():
@@ -284,7 +301,9 @@ def test_get_deployment_history_single_revision():
 
 def test_get_deployment_history_not_found():
     mock_apps_v1 = MagicMock()
-    mock_apps_v1.read_namespaced_deployment.side_effect = ApiException(status=404, reason="Not Found")
+    mock_apps_v1.read_namespaced_deployment.side_effect = ApiException(
+        status=404, reason="Not Found"
+    )
 
     with patch("app.tools._get_k8s_apis", return_value=(MagicMock(), mock_apps_v1)):
         output = get_deployment_history("missing-dep", namespace="default")
@@ -308,5 +327,3 @@ def test_get_deployment_history_no_replicasets():
         output = get_deployment_history("empty-dep", namespace="default")
 
     assert "No rollout history (ReplicaSets) found" in output
-
-

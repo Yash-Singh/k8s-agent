@@ -1,187 +1,121 @@
-# Kubernetes Investigation Agent 🔍
+# Kubernetes Investigation & SRE Agent ☸️🔍
 
-An intelligent, production-ready Kubernetes investigation agent in Python that takes container, pod, and cluster logs as input, performs deep root-cause diagnosis, and provides a structured post-investigation analysis with verbatim supporting evidence, incident timelines, and actionable remediation steps.
-
----
-
-## ✨ Features
-
-- **Multi-Format Log Ingestion**:
-  - Container runtime logs (CRI-O / Containerd standard format: `<ts> <stream> <F|P> <msg>`).
-  - Structured JSON logs (Zap, Bunyan, Winston, Logrus, Python Structlog).
-  - Standard RFC3339 / ISO-8601 plain text logs.
-  - Kubernetes cluster events (`kubectl get events`, warning/normal notifications).
-  - Multi-line stack trace grouping (Python `Tracebacks`, Go `panics`, Java `Exceptions`, Node.js unhandled rejections).
-
-- **Domain-Specific Failure Detectors**:
-  - **`OOMKilled`**: Linux kernel OOM killer, cgroup memory exhaustion, Java heap space, Exit Code 137.
-  - **`CrashLoopBackOff`**: Application runtime crashes, syntax errors, missing environment variables (`KeyError`), fatal exit codes (1, 134 SIGABRT, 139 SIGSEGV).
-  - **`ProbeFailure`**: Liveness probe timeouts (killing container) vs. Readiness probe failures (removing from endpoints) vs. Startup probe grace limits.
-  - **`NetworkDNS`**: Cluster CoreDNS failures (`SERVFAIL`, `NXDOMAIN`), internal/external DNS resolution timeouts, TCP connection refused.
-  - **`ImagePullBackOff`**: Container registry 401 Unauthorized / missing `imagePullSecrets`, manifest unknown, tag typos, CRI unpack failures.
-  - **`DiskPressure`**: Volume capacity exhausted (`ENOSPC`), read-only filesystem remounts, node disk pressure evictions.
-  - **`RBAC`**: Kubernetes API 403 Forbidden errors, missing ServiceAccount Role/ClusterRole bindings.
-
-- **Post-Investigation Output with Verbatim Evidence**:
-  - **Executive Summary**: Clear incident narrative and blast radius evaluation.
-  - **Primary Root Cause**: Root cause category, title, confidence rating (e.g. 98%), and impacted components.
-  - **Supporting Evidence Table**: Exact line numbers, timestamp, raw log snippet, and diagnostic explanation of why it proves the failure.
-  - **Chronological Timeline**: Step-by-step cascade from first warning to fatal crash.
-  - **Actionable Remediation**: Phase-based fixes (immediate mitigation commands, copy-paste YAML patches, and long-term preventative measures).
-
-- **Dual Engine (Deterministic Expert + Optional LLM Synthesis)**:
-  - **Offline Expert Engine**: Works completely offline out-of-the-box with zero API keys or external dependencies.
-  - **LLM Synthesis (Optional)**: Automatically enriches findings using an LLM (e.g. OpenAI GPT-4o-mini) when `OPENAI_API_KEY` is provided.
-
-- **Multiple Presentation Modes**:
-  - Terminal interactive output with Rich panels, colored severity badges, and syntax-highlighted YAML.
-  - GitHub-flavored Markdown reports (`--format markdown`, `--output report.md`).
-  - Machine-readable JSON output (`--format json`, `--output report.json`) for CI/CD pipelines and webhooks.
+An autonomous Kubernetes Site Reliability Engineering (SRE) and cluster troubleshooting agent built with the **Google Agent Development Kit (ADK)** and **Gemini**. The agent connects to Kubernetes clusters, investigates crashing pods, inspects cluster lifecycle events, analyzes rollout revisions, and produces structured post-investigation SRE incident reports.
 
 ---
 
-## 🚀 Quickstart
+## 🏛️ Project Anatomy
 
-### 1. Installation
+This project follows the official Google ADK and `agents-cli` standard directory anatomy:
+
+```text
+k8s-agent/
+├── agents-cli-manifest.yaml   # agents-cli project specification
+├── app/
+│   ├── __init__.py
+│   ├── agent.py               # ADK root_agent definition, prompt & model configuration
+│   ├── tools.py               # Kubernetes inspection tools using official client
+│   ├── fast_api_app.py        # FastAPI server hosting ADK SSE & A2A protocol endpoints
+│   └── app_utils/             # Session services and A2A helpers
+├── tests/
+│   ├── unit/                  # Unit tests for tools and logic
+│   │   ├── test_k8s_tools.py  # Mock tests for all Kubernetes tools
+│   │   └── test_dummy.py
+│   ├── integration/           # E2E server and A2A integration tests
+│   │   ├── test_adk_agent.py  # Agent streaming test
+│   │   └── test_server_e2e.py # FastAPI / A2A RPC endpoint tests
+│   └── eval/                  # Quality evaluation datasets and metrics
+│       ├── datasets/          # Multi-turn and single-turn evaluation datasets
+│       ├── eval_config.yaml   # LLM-as-judge evaluation configuration
+│       └── response_quality.py# Response quality judge metric
+├── pyproject.toml             # Project dependencies and packaging
+├── GEMINI.md                  # Development guide & coding agent rules
+└── README.md
+```
+
+---
+
+## 🛠️ Kubernetes Tools (`app/tools.py`)
+
+The agent is equipped with native tools powered by the official Python Kubernetes Client library (`kubernetes`):
+
+- **`inspect_kubernetes_pods`**: Inspects pods across namespaces or filters by name, displaying ready counts, phases, restart counts, and pod IPs.
+- **`check_kubernetes_deployments`**: Lists deployments with replica counts, available pods, and up-to-date status.
+- **`get_pod_events`**: Fetches and sorts lifecycle events (e.g. `BackOff`, `ImagePullBackOff`, `OOMKilling`, `Unhealthy`) with event counts and timestamps.
+- **`get_pod_logs`**: Retrieves runtime logs with customizable tail lines and supports fetching logs from previously terminated/crashed containers (`previous=True`).
+- **`get_deployment_history`**: Examines deployment rollout revisions (ReplicaSets) and automatically detects container image updates or configuration differences between revisions.
+
+Both in-cluster configuration (`load_incluster_config`) for deployed pods/services and local workstation kubeconfig (`load_kube_config`) are supported out-of-the-box.
+
+---
+
+## 🚀 Quickstart & Development
+
+### 1. Prerequisites
+
+Install the `google-agents-cli` and `uv`:
 
 ```bash
-git clone https://github.com/example/k8s-agent.git
-cd k8s-agent
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e .
+uv tool install google-agents-cli
+uv sync
 ```
 
-### 2. Run a Demonstration
+### 2. Interactive Testing (Playground)
 
-The agent includes built-in realistic failure scenarios:
+Launch the interactive web UI to test and converse with the agent:
 
 ```bash
-# List available sample scenarios
-k8s-agent list-samples
-
-# Investigate an OOMKilled scenario
-k8s-agent demo oom_killed
-
-# Investigate a CrashLoopBackOff scenario
-k8s-agent demo crash_loop
-
-# Investigate a CoreDNS failure scenario
-k8s-agent demo dns_failure
+agents-cli playground
 ```
 
-### 3. Investigate Live Kubernetes Logs
-
-Piping live logs directly from `kubectl`:
+Or run a single prompt directly from the terminal:
 
 ```bash
-# Analyze a crashing pod's previous logs
-kubectl logs <pod-name> --previous | k8s-agent investigate
+agents-cli run "Inspect the pods in the default namespace and report any failures"
+```
 
-# Analyze logs from a file and export a Markdown report
-k8s-agent investigate /path/to/pod.log --format markdown --output incident-report.md
+### 3. Run the FastAPI Server (Local & A2A Protocol)
 
-# Generate JSON for automated CI/CD pipeline verification
-kubectl logs deployment/my-service --tail=500 | k8s-agent investigate --format json
+Start the local server hosting ADK SSE and A2A agent-to-agent communication:
+
+```bash
+uv run uvicorn app.fast_api_app:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 ---
 
-## 🐍 Python API Usage
+## 🧪 Testing & Evaluation
 
-You can embed the investigation agent directly into your own Python applications, SRE bots, or Slack/Discord integrations:
-
-```python
-from k8s_agent import K8sInvestigationAgent, ReportFormatter
-
-# Initialize the agent
-agent = K8sInvestigationAgent(offline=True)
-
-# Raw log string, file path, or stream
-log_content = """
-2026-09-28T14:10:45Z stdout F [WARN] High memory watermark reached: current=480MB, threshold=512MB
-2026-09-28T14:11:02Z stderr F [ERROR] java.lang.OutOfMemoryError: Java heap space
-2026-09-28T14:11:03Z system F Warning OOMKilled pod/worker-1 Memory cgroup out of memory: Container worker terminated with exit code 137
-"""
-
-# Perform investigation
-report = agent.investigate(log_content)
-
-# Access structured findings
-print(f"Status: {report.status}")
-print(f"Severity: {report.severity.value}")
-print(f"Root Cause: {report.root_cause.title} ({int(report.root_cause.confidence_score * 100)}% confidence)")
-
-# Inspect supporting evidence
-for evidence in report.supporting_evidence:
-    print(f"[Line #{evidence.line_number}] {evidence.category}: {evidence.log_snippet}")
-    print(f"  ↳ Diagnostic Relevance: {evidence.relevance}")
-
-# Render to Markdown or print to terminal
-formatter = ReportFormatter()
-formatter.print_terminal(report)
-markdown_text = formatter.to_markdown(report)
-```
-
----
-
-## 📊 Architecture
-
-```
-                       ┌────────────────────────┐
-                       │  Log Stream / Input   │
-                       │ (kubectl / file / pipe)│
-                       └───────────┬────────────┘
-                                   │
-                                   ▼
-                       ┌────────────────────────┐
-                       │       LogParser        │
-                       │ CRI / JSON / Plain /   │
-                       │  Stacktrace Grouping   │
-                       └───────────┬────────────┘
-                                   │
-                                   ▼
-                       ┌────────────────────────┐
-                       │ Anomaly Detectors      │
-                       │ • OOMDetector          │
-                       │ • CrashLoopDetector    │
-                       │ • ProbeDetector        │
-                       │ • NetworkDNSDetector   │
-                       │ • ImagePullDetector    │
-                       │ • StorageDetector      │
-                       │ • RBACDetector         │
-                       └───────────┬────────────┘
-                                   │
-                                   ▼
-                       ┌────────────────────────┐
-                       │    HeuristicEngine     │
-                       │  • Causal Ranking      │
-                       │  • Evidence Extraction │
-                       │  • Timeline Synthesis  │
-                       └───────────┬────────────┘
-                                   │
-                    ┌──────────────┴──────────────┐
-                    │ (Optional LLM Enrichment)   │
-                    ▼                             ▼
-       ┌────────────────────────┐    ┌────────────────────────┐
-       │     Offline Report     │    │  LLM-Augmented Report  │
-       └────────────┬───────────┘    └────────────┬───────────┘
-                    │                             │
-                    └──────────────┬──────────────┘
-                                   │
-                                   ▼
-                       ┌────────────────────────┐
-                       │    ReportFormatter     │
-                       │ Rich CLI / MD / JSON   │
-                       └────────────────────────┘
-```
-
----
-
-## 🧪 Running Tests
-
-The test suite covers log parsing, detector accuracy, causal ranking, and CLI commands:
+### Unit Tests
+Run the unit test suite verifying Kubernetes tools:
 
 ```bash
-pytest -v
+uv run pytest tests/unit
 ```
+
+### Integration Tests
+Run end-to-end tests for the FastAPI server and A2A streaming:
+
+```bash
+uv run pytest tests/integration
+```
+
+### Quality Evaluation Flywheel
+Run the LLM-as-judge evaluation suite across your test dataset:
+
+```bash
+agents-cli eval run
+```
+
+---
+
+## 📋 Incident Report Output Format
+
+When investigating failures, the agent synthesizes findings into a standardized SRE Investigation Report:
+
+1. **Incident Overview**: Key metadata table (resource, namespace, severity badge, status phase, active image).
+2. **Executive Summary & Impact**: Concise incident summary and availability impact assessment.
+3. **Root Cause Analysis (RCA)**: Explicit failure category, confidence score, and technical diagnosis.
+4. **Supporting Evidence Table**: Verbatim events and logs with line numbers and diagnostic significance.
+5. **Rollout & Version History**: Deployment revision tracking and detected image tag differences.
+6. **Remediation Plan**: Numbered, copy-pasteable commands for immediate fix, status verification, and long-term prevention.

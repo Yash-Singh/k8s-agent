@@ -12,32 +12,39 @@ authors = [
     { name = "K8s Agent Team" }
 ]
 dependencies = [
-    "pydantic>=2.0",
-    "rich>=13.0",
-    "click>=8.0",
-    "pyyaml>=6.0",
     "google-adk[bigquery-analytics,gcp,otel-gcp]>=2.8.0,<2.9.0",
     "opentelemetry-resourcedetector-gcp<=1.12.0a0",
     "gcsfs>=2024.11.0",
     "a2a-sdk[http-server]>=1.0,<2",
     "aiohttp>=3.13.4",
     "kubernetes>=31.0.0",
+    "rich>=13.0",
+    "python-dotenv>=1.0.0",
 ]
 
+
 [project.optional-dependencies]
-llm = [
-    "openai>=1.0.0",
-]
 dev = [
     "pytest>=7.0",
 ]
+lint = [
+    "ruff",
+    "codespell",
+    "ty",
+    "pytest>=7.0",
+]
 
-[project.scripts]
-k8s-agent = "k8s_agent.cli:main"
+
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["k8s_agent*", "app*"]
+include = ["app*"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
+
+[dependency-groups]
+dev = [
+    "ty[lint]>=0.0.84",
+]
+
