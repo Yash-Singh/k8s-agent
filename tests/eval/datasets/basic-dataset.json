@@ -20,6 +20,216 @@
         "role": "user",
         "parts": [{"text": "We have an issue with pod nginx-b7b4d9b7d-zv7tg in namespace apps. Can you check its events and logs and investigate what happened?"}]
       }
+    },
+    {
+      "eval_case_id": "incident_oomkilled",
+      "prompt": {
+        "role": "user",
+        "parts": [
+          {
+            "text": "The payments-service pod payments-api-79bf48cb94-w2x5q in namespace payments keeps restarting with exit code 137. Last terminated state shows reason OOMKilled. Can you investigate why it was terminated, check previous logs and events, diagnose if it exceeded memory limits or experienced a memory leak, and provide a remediation plan?"
+          }
+        ]
+      },
+      "reference": {
+        "response": {
+          "role": "model",
+          "parts": [
+            {
+              "text": "The pod payments-api-79bf48cb94-w2x5q was terminated with exit code 137 due to OOMKilled (Out Of Memory). Diagnosis confirms the container process exceeded its configured memory limit or hit cgroup memory constraints. Remediation requires inspecting peak memory consumption, adjusting container memory requests and limits in the deployment spec, profiling application heap/memory leaks, and setting appropriate HPA/VPA scaling policies."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "eval_case_id": "incident_cpu_throttling",
+      "prompt": {
+        "role": "user",
+        "parts": [
+          {
+            "text": "Users are reporting severe latency spikes and degraded response times on the auth-gateway deployment in namespace core. Prometheus alerts show high container CPU throttling (over 80% throttle ratio) on pod auth-gateway-55694b7cf8-8jkl2 even though overall node CPU usage is below 40%. Please investigate the cause, explain why CPU throttling occurs despite low node utilization, and recommend how to fix it."
+          }
+        ]
+      },
+      "reference": {
+        "response": {
+          "role": "model",
+          "parts": [
+            {
+              "text": "The auth-gateway pod experiences CFS (Completely Fair Scheduler) CPU throttling because its container CPU limits are configured too restrictively for multi-threaded burst workloads, capping quota per period (cfs_period_us / cfs_quota_us) regardless of available node CPU capacity. Remediation includes increasing or removing CPU limits while keeping adequate CPU requests, tuning CFS quota periods, or optimizing thread concurrency."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "eval_case_id": "incident_container_crash",
+      "prompt": {
+        "role": "user",
+        "parts": [
+          {
+            "text": "Our order-processing pod order-worker-57fdb4466b-4k9m1 in namespace ecommerce crashed immediately upon startup with exit code 1 and failed to start. Can you inspect the pod events and previous container logs to identify the unhandled exception or missing configuration file causing the crash, and recommend an immediate fix?"
+          }
+        ]
+      },
+      "reference": {
+        "response": {
+          "role": "model",
+          "parts": [
+            {
+              "text": "Investigation of the crashed container using previous logs and pod events reveals an unhandled runtime exception / fatal process termination (exit code 1) during startup, typically due to a missing mandatory configuration file, unpopulated environment variable, or database connection initialization failure. Remediation requires fixing the application configuration/secret mounting, verifying startup dependencies, and ensuring graceful error handling."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "eval_case_id": "incident_crashloopbackoff",
+      "prompt": {
+        "role": "user",
+        "parts": [
+          {
+            "text": "Pod inventory-sync-6495df7b85-nvd9p in namespace inventory is stuck in CrashLoopBackOff with a restart count of 28. The deployment rollout is blocked. Please investigate the pod status, check previous container termination logs and Kubelet backoff events, determine why the container keeps dying and restarting, and provide remediation steps."
+          }
+        ]
+      },
+      "reference": {
+        "response": {
+          "role": "model",
+          "parts": [
+            {
+              "text": "The pod inventory-sync-6495df7b85-nvd9p is trapped in CrashLoopBackOff with exponential restart delay because the container process repeatedly terminates with non-zero exit status shortly after starting. Kubelet events show BackOff restarting failed container. Diagnosis requires examining previous container logs for panic or startup assertion failures. Remediation involves correcting bad release configurations, rolling back the deployment revision, and addressing the root startup defect."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "eval_case_id": "incident_node_memory_pressure",
+      "prompt": {
+        "role": "user",
+        "parts": [
+          {
+            "text": "Worker node gke-prod-pool-1-e4a8b72c-9m4x is reporting MemoryPressure condition as True, and lower-priority BestEffort and Burstable pods are being evicted by the kubelet. Can you explain the root cause of Node MemoryPressure, identify how the eviction manager behaves under memory thresholds, and provide an action plan to restore node stability?"
+          }
+        ]
+      },
+      "reference": {
+        "response": {
+          "role": "model",
+          "parts": [
+            {
+              "text": "The node is under MemoryPressure because total memory usage breached the Kubelet eviction threshold (evictionHard/Soft imagefs or memory.available). The Kubelet eviction manager ranks and evicts pods based on QoS tiers (BestEffort first, then Burstable exceeding requests). Remediation requires identifying memory-hogging pods on the node, cordoning the node if necessary, defining strict resource requests and limits across workloads, and scaling the node pool."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "eval_case_id": "incident_node_notready",
+      "prompt": {
+        "role": "user",
+        "parts": [
+          {
+            "text": "Node k8s-worker-prod-03 transitioned to NotReady status. Pods scheduled on this node are unmovable or showing Terminating/NodeLost, and no new workloads can be scheduled. Please troubleshoot why a Kubernetes node transitions to NotReady (such as kubelet stoppage, PIDs exhaustion, disk pressure, or network partition with control plane), and provide the SRE recovery procedure."
+          }
+        ]
+      },
+      "reference": {
+        "response": {
+          "role": "model",
+          "parts": [
+            {
+              "text": "A Kubernetes node reports NotReady when the control plane stops receiving node heartbeats (NodeStatus lease updates) due to kubelet systemd service failure, node network partition, container runtime daemon (containerd/dockerd) hang, or kernel freeze. SRE remediation involves checking kubelet status and systemd journal logs on the host, verifying control-plane connectivity, cordoning/draining the node if unstable, and restarting the kubelet and container runtime."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "eval_case_id": "incident_readiness_liveness_probe",
+      "prompt": {
+        "role": "user",
+        "parts": [
+          {
+            "text": "Pod checkout-service-84d5f8c697-tzl6q in namespace checkout has container readiness 0/1 and keeps failing both liveness and readiness HTTP probes on /healthz and /ready. The pod is repeatedly restarted by Kubelet and receives no traffic. Can you analyze probe failure events, determine if it is due to slow startup timeout, deadlock, or incorrect port/path, and provide tuning recommendations?"
+          }
+        ]
+      },
+      "reference": {
+        "response": {
+          "role": "model",
+          "parts": [
+            {
+              "text": "Kubelet events indicate Unhealthy probe status with connection refused, timeout, or HTTP 500 responses on /healthz and /ready. Because the readiness probe fails, the pod is removed from Service endpoints; because the liveness probe fails, Kubelet kills and restarts the container. Remediation includes introducing a startupProbe to protect slow application initialization, increasing initialDelaySeconds/timeoutSeconds/failureThreshold, and fixing probe target port, path, or endpoint deadlock."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "eval_case_id": "incident_incorrect_resource_requests_limits",
+      "prompt": {
+        "role": "user",
+        "parts": [
+          {
+            "text": "We are observing severe cluster bin-packing issues: nodes in cluster-west show CPU allocation near 100% preventing new pods from scheduling (Pending with 0/N nodes available: Insufficient cpu), yet actual node CPU utilization in Datadog is under 15%. Simultaneously, several pods are crashing with OOMKilled due to limits being set lower than requests. Can you analyze the incorrect resource requests/limits configuration, explain the consequences of over-provisioned requests vs under-provisioned limits, and prescribe optimal sizing practices?"
+          }
+        ]
+      },
+      "reference": {
+        "response": {
+          "role": "model",
+          "parts": [
+            {
+              "text": "The cluster suffers from resource fragmentation and scheduling blockage due to inflated CPU requests (which the Kubernetes scheduler reserves 100% against node allocatable) despite low real-world usage, alongside misconfigured limits (e.g., limit < request or limit set too low for memory peaks causing OOMKill). Remediation requires aligning requests with actual p95 historical resource usage, setting realistic limits to prevent runaway leaks, using Vertical Pod Autoscaler (VPA) or Goldilocks for recommendation, and establishing LimitRanges."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "eval_case_id": "incident_service_no_endpoints",
+      "prompt": {
+        "role": "user",
+        "parts": [
+          {
+            "text": "Clients sending requests to Kubernetes Service billing-svc in namespace billing receive HTTP 503 Service Unavailable. Running kubectl get endpoints billing-svc shows <none>. Can you troubleshoot why the Service has no endpoints (selector mismatch, pod labels, failing readiness probes, or targetPort misconfiguration), and provide the resolution steps?"
+          }
+        ]
+      },
+      "reference": {
+        "response": {
+          "role": "model",
+          "parts": [
+            {
+              "text": "The Service billing-svc has no endpoints (<none>) because the EndpointSlice/Endpoints controller found no ready pods matching the Service spec.selector. Root causes include: mismatch between Service selector and Pod template labels, pods failing readiness probes (hence excluded from endpoints), pods stuck in non-running states (CrashLoopBackOff/Pending), or namespace mismatch. Remediation requires verifying pod labels match spec.selector exactly, checking pod readiness (1/1 Ready), and ensuring the targetPort matches the container listening port."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "eval_case_id": "incident_service_routes_wrong_unhealthy_pods",
+      "prompt": {
+        "role": "user",
+        "parts": [
+          {
+            "text": "Our payment-api Service in namespace payments is routing 30% of user traffic to staging/canary pods and failing instances, resulting in connection refused errors and corrupted response payloads. How can a Kubernetes Service route traffic to wrong or unhealthy pods (such as overlapping label selectors across deployment tiers, missing readiness probes causing unready pods to serve traffic, or stale endpoints), and how do we remediate it?"
+          }
+        ]
+      },
+      "reference": {
+        "response": {
+          "role": "model",
+          "parts": [
+            {
+              "text": "A Kubernetes Service routes traffic to wrong or unhealthy pods when: (1) Service label selector is too broad (e.g., app: payment-api without environment: production), matching both production and staging/canary pods simultaneously; (2) pods lack readiness probes, causing Kubelet to register containers into Endpoints before they are initialized or while they are degraded; or (3) stale endpoints exist due to kube-proxy sync delays. Remediation requires adding explicit environment/version labels to the Service selector, enforcing robust readinessProbe configurations on all pods, and inspecting EndpointSlices."
+            }
+          ]
+        }
+      }
     }
   ]
 }

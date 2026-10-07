@@ -424,3 +424,157 @@ def get_deployment_history(deployment_name: str, namespace: str = "default") -> 
         return f"Kubernetes API error querying deployment history ({e.status}): {e.reason} - {e.body}"
     except Exception as e:
         return f"Failed to retrieve deployment history: {e!s}"
+
+
+def get_nodes_info(node_name: str = "") -> str:
+    """Fetch information and status of Kubernetes nodes in the cluster.
+
+    Use this tool to analyze node-related issues such as Node NotReady, MemoryPressure,
+    DiskPressure, PIDPressure, NetworkUnavailable, scheduling taints, and capacity limits.
+
+    Args:
+        node_name: Optional name of a specific node to inspect in detail. If empty, lists all nodes.
+
+    Returns:
+        Formatted summary or table containing node names, readiness status, roles,
+        detailed conditions (Ready, MemoryPressure, DiskPressure, PIDPressure, NetworkUnavailable),
+        resource capacity/allocatable (CPU, memory, pods), kubelet/OS versions, and taints.
+    """
+    try:
+        core_v1, _ = _get_k8s_apis()
+        if node_name:
+            try:
+                node = core_v1.read_node(name=node_name)
+                nodes = [node]
+            except ApiException as e:
+                return f"Kubernetes API error fetching node '{node_name}' ({e.status}): {e.reason} - {e.body}"
+        else:
+            node_list = core_v1.list_node()
+            nodes = node_list.items
+
+        if not nodes:
+            return "No nodes found in cluster."
+
+        # If a single specific node is requested, provide full detailed diagnostic view
+        if node_name:
+            node = nodes[0]
+            metadata = node.metadata
+            status = node.status
+
+            roles = [
+                key.replace("node-role.kubernetes.io/", "")
+                for key in (metadata.labels or {})
+                if key.startswith("node-role.kubernetes.io/")
+            ]
+            role_str = ", ".join(roles) if roles else "<worker/none>"
+
+            lines = [
+                f"=== Node Details: {metadata.name} ===",
+                f"Roles: {role_str}",
+                f"Creation Timestamp: {metadata.creation_timestamp}",
+                "",
+                "--- Node Conditions ---",
+                f"{'CONDITION':<25} {'STATUS':<10} {'REASON':<25} {'MESSAGE'}",
+            ]
+            for cond in status.conditions or []:
+                lines.append(
+                    f"{cond.type:<25} {cond.status:<10} {(cond.reason or '<none>'):<25} {(cond.message or '<none>')}"
+                )
+
+            lines.extend(
+                [
+                    "",
+                    "--- Node Capacity & Allocatable ---",
+                    f"{'RESOURCE':<20} {'CAPACITY':<20} {'ALLOCATABLE':<20}",
+                ]
+            )
+            capacity = status.capacity or {}
+            allocatable = status.allocatable or {}
+            all_res = sorted(set(capacity.keys()).union(set(allocatable.keys())))
+            for res in all_res:
+                lines.append(
+                    f"{res:<20} {capacity.get(res, '<none>'):<20} {allocatable.get(res, '<none>'):<20}"
+                )
+
+            lines.extend(
+                [
+                    "",
+                    "--- System & Kubelet Info ---",
+                    f"Kubelet Version: {status.node_info.kubelet_version if status.node_info else '<unknown>'}",
+                    f"Container Runtime: {status.node_info.container_runtime_version if status.node_info else '<unknown>'}",
+                    f"OS Image: {status.node_info.os_image if status.node_info else '<unknown>'}",
+                    f"Kernel Version: {status.node_info.kernel_version if status.node_info else '<unknown>'}",
+                    f"Architecture: {status.node_info.architecture if status.node_info else '<unknown>'}",
+                ]
+            )
+
+            taints = node.spec.taints if node.spec and node.spec.taints else []
+            lines.extend(
+                [
+                    "",
+                    "--- Taints ---",
+                ]
+            )
+            if taints:
+                for t in taints:
+                    lines.append(f"• key={t.key}, value={t.value}, effect={t.effect}")
+            else:
+                lines.append("• None")
+
+            return "\n".join(lines)
+
+        # Overview table of all cluster nodes
+        lines = [
+            f"{'NAME':<35} {'STATUS':<12} {'ROLES':<15} {'AGE':<12} {'VERSION':<15} {'CONDITIONS/PRESSURES':<35} {'TAINTS'}"
+        ]
+        for node in nodes:
+            name = node.metadata.name or ""
+            labels = node.metadata.labels or {}
+            roles = [
+                k.replace("node-role.kubernetes.io/", "")
+                for k in labels
+                if k.startswith("node-role.kubernetes.io/")
+            ]
+            role_str = ", ".join(roles) if roles else "<worker>"
+
+            # Determine ready status and pressure conditions
+            ready_status = "Unknown"
+            pressures = []
+            for cond in node.status.conditions or []:
+                if cond.type == "Ready":
+                    ready_status = "Ready" if cond.status == "True" else "NotReady"
+                elif cond.status == "True":
+                    # MemoryPressure, DiskPressure, PIDPressure, NetworkUnavailable
+                    pressures.append(cond.type)
+
+            conditions_str = ", ".join(pressures) if pressures else "None"
+            kubelet_ver = (
+                node.status.node_info.kubelet_version
+                if node.status and node.status.node_info
+                else "<unknown>"
+            )
+
+            taints_list = (
+                [f"{t.key}={t.value}:{t.effect}" for t in node.spec.taints]
+                if node.spec and node.spec.taints
+                else []
+            )
+            taints_str = ", ".join(taints_list) if taints_list else "<none>"
+
+            age_str = (
+                str(node.metadata.creation_timestamp)[:10]
+                if node.metadata.creation_timestamp
+                else "<unknown>"
+            )
+
+            lines.append(
+                f"{name:<35} {ready_status:<12} {role_str:<15} {age_str:<12} {kubelet_ver:<15} {conditions_str:<35} {taints_str}"
+            )
+
+        return "\n".join(lines)
+    except ApiException as e:
+        return (
+            f"Kubernetes API error querying nodes ({e.status}): {e.reason} - {e.body}"
+        )
+    except Exception as e:
+        return f"Failed to retrieve nodes info: {e!s}"

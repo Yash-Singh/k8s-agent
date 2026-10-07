@@ -7,6 +7,7 @@ from kubernetes.client.exceptions import ApiException
 from app.tools import (
     check_kubernetes_deployments,
     get_deployment_history,
+    get_nodes_info,
     get_pod_events,
     get_pod_logs,
     inspect_kubernetes_pods,
@@ -327,3 +328,87 @@ def test_get_deployment_history_no_replicasets():
         output = get_deployment_history("empty-dep", namespace="default")
 
     assert "No rollout history (ReplicaSets) found" in output
+
+
+def test_get_nodes_info_all_nodes():
+    mock_core_v1 = MagicMock()
+    node1 = MagicMock()
+    node1.metadata.name = "node-1"
+    node1.metadata.labels = {"node-role.kubernetes.io/control-plane": ""}
+    node1.metadata.creation_timestamp = "2026-01-01T00:00:00Z"
+    cond_ready = MagicMock(type="Ready", status="True")
+    node1.status.conditions = [cond_ready]
+    node1.status.node_info.kubelet_version = "v1.30.0"
+    node1.spec.taints = []
+
+    node2 = MagicMock()
+    node2.metadata.name = "node-2"
+    node2.metadata.labels = {}
+    node2.metadata.creation_timestamp = "2026-01-01T00:00:00Z"
+    cond_not_ready = MagicMock(type="Ready", status="False")
+    cond_mem_press = MagicMock(type="MemoryPressure", status="True")
+    node2.status.conditions = [cond_not_ready, cond_mem_press]
+    node2.status.node_info.kubelet_version = "v1.30.0"
+    taint = MagicMock(
+        key="node.kubernetes.io/unreachable", value="true", effect="NoExecute"
+    )
+    node2.spec.taints = [taint]
+
+    mock_node_list = MagicMock()
+    mock_node_list.items = [node1, node2]
+    mock_core_v1.list_node.return_value = mock_node_list
+
+    with patch("app.tools._get_k8s_apis", return_value=(mock_core_v1, MagicMock())):
+        output = get_nodes_info()
+
+    assert "node-1" in output
+    assert "Ready" in output
+    assert "control-plane" in output
+    assert "node-2" in output
+    assert "NotReady" in output
+    assert "MemoryPressure" in output
+    assert "node.kubernetes.io/unreachable" in output
+
+
+def test_get_nodes_info_specific_node():
+    mock_core_v1 = MagicMock()
+    node = MagicMock()
+    node.metadata.name = "worker-1"
+    node.metadata.labels = {"node-role.kubernetes.io/worker": ""}
+    node.metadata.creation_timestamp = "2026-01-01T00:00:00Z"
+    cond_ready = MagicMock(
+        type="Ready",
+        status="True",
+        reason="KubeletReady",
+        message="kubelet is posting ready status",
+    )
+    node.status.conditions = [cond_ready]
+    node.status.capacity = {"cpu": "4", "memory": "16Gi"}
+    node.status.allocatable = {"cpu": "3800m", "memory": "14Gi"}
+    node.status.node_info.kubelet_version = "v1.30.0"
+    node.status.node_info.container_runtime_version = "containerd://1.7.0"
+    node.status.node_info.os_image = "Ubuntu 22.04 LTS"
+    node.status.node_info.kernel_version = "5.15.0"
+    node.status.node_info.architecture = "amd64"
+    node.spec.taints = []
+
+    mock_core_v1.read_node.return_value = node
+
+    with patch("app.tools._get_k8s_apis", return_value=(mock_core_v1, MagicMock())):
+        output = get_nodes_info(node_name="worker-1")
+
+    assert "=== Node Details: worker-1 ===" in output
+    assert "KubeletReady" in output
+    assert "--- Node Capacity & Allocatable ---" in output
+    assert "16Gi" in output
+    assert "containerd://1.7.0" in output
+
+
+def test_get_nodes_info_api_error():
+    mock_core_v1 = MagicMock()
+    mock_core_v1.read_node.side_effect = ApiException(status=404, reason="Not Found")
+
+    with patch("app.tools._get_k8s_apis", return_value=(mock_core_v1, MagicMock())):
+        output = get_nodes_info(node_name="nonexistent-node")
+
+    assert "Kubernetes API error fetching node 'nonexistent-node' (404)" in output

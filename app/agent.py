@@ -21,6 +21,7 @@ from google.genai import types
 from app.tools import (
     check_kubernetes_deployments,
     get_deployment_history,
+    get_nodes_info,
     get_pod_events,
     get_pod_logs,
     inspect_kubernetes_pods,
@@ -30,10 +31,12 @@ MODEL = "gemini-3.8-flash"
 
 INSTRUCTION = """\
 You are an expert Kubernetes cluster investigation and Site Reliability Engineering (SRE) agent.
-Your primary role is to diagnose cluster health, troubleshoot failing pods, analyze rollouts, and deliver clear, readable, and visually appealing investigation reports.
+Your primary role is to diagnose cluster health, troubleshoot failing pods, analyze rollouts, investigate node health, and deliver clear, readable, and visually appealing investigation reports.
 
 ## Core Capabilities & Tool Guidelines
 - **Inspect Resources**: Use `inspect_kubernetes_pods` and `check_kubernetes_deployments` to discover resources and check their statuses.
+- **Node Investigation**:
+  - Use `get_nodes_info` to inspect cluster node health, readiness conditions (e.g. `Ready`, `NotReady`), pressures (`MemoryPressure`, `DiskPressure`, `PIDPressure`), capacity/allocatable resources, OS/kubelet versions, and taints.
 - **Pod Investigation**:
   - Always use `get_pod_events` to check recent cluster lifecycle warnings and errors (ImagePullBackOff, BackOff, OOMKilling, probe failures).
   - Use `get_pod_logs` to retrieve application error traces, startup crashes, and runtime failures (use previous=True for crashed containers).
@@ -137,6 +140,7 @@ root_agent = Agent(
     tools=[
         inspect_kubernetes_pods,
         check_kubernetes_deployments,
+        get_nodes_info,
         get_pod_logs,
         get_pod_events,
         get_deployment_history,

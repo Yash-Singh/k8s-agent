@@ -215,3 +215,6 @@ credentials*.json
 # Local documentation / iteration logs
 walkthrough.md
 
+# Eval traces and grade results artifacts
+artifacts/
+
