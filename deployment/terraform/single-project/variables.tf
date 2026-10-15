@@ -47,9 +47,3 @@ variable "app_sa_roles" {
     "roles/serviceusage.serviceUsageConsumer",
   ]
 }
-
-variable "agent_framework" {
-  description = "Framework label on the Agent Runtime deployment. The Google Cloud console reads it to pick a playground; override it when the container is not an ADK app."
-  type        = string
-  default     = "google-adk"
-}

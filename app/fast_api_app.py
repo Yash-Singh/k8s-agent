@@ -24,17 +24,12 @@ from google.adk.runners import Runner
 
 from app.app_utils import services
 from app.app_utils.a2a import attach_a2a_routes
-from app.app_utils.reasoning_engine_adapter import (
-    attach_reasoning_engine_routes,
-)
 
 load_dotenv()
 allow_origins = (
     os.getenv("ALLOW_ORIGINS", "").split(",") if os.getenv("ALLOW_ORIGINS") else None
 )
-otel_to_cloud = os.environ.get(
-    "GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY", ""
-).lower() in ("true", "1")
+otel_to_cloud = True
 
 AGENT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -73,10 +68,6 @@ app: FastAPI = get_fast_api_app(
 )
 app.title = "k8s-agent"
 app.description = "API for interacting with the Agent k8s-agent"
-
-# Proxy routes so the Vertex AI Console Playground (reasoning_engine SDK) can
-# talk to this agent alongside the native adk_api routes.
-attach_reasoning_engine_routes(app)
 
 
 # Main execution
