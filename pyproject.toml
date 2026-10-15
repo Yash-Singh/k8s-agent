@@ -20,6 +20,9 @@ dependencies = [
     "kubernetes>=31.0.0",
     "rich>=13.0",
     "python-dotenv>=1.0.0",
+    "google-cloud-aiplatform[agent-engines,evaluation]>=1.156.0,<2.0.0",
+    "google-cloud-logging>=3.12.0,<4.0.0",
+    "protobuf>=6.31.1,<7.0.0",
 ]
 
 
