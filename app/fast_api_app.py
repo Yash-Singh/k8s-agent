@@ -13,12 +13,14 @@
 # limitations under the License.
 
 import contextlib
+import ipaddress
 import os
 from collections.abc import AsyncIterator
 
 from a2a.server.tasks import InMemoryTaskStore
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from google.adk.cli.fast_api import get_fast_api_app
 from google.adk.runners import Runner
 
@@ -68,6 +70,58 @@ app: FastAPI = get_fast_api_app(
 )
 app.title = "k8s-agent"
 app.description = "API for interacting with the Agent k8s-agent"
+
+
+def _get_allowed_networks() -> list[ipaddress.IPv4Network | ipaddress.IPv6Network]:
+    """Parse comma-separated CIDRs from ALLOWED_CIDRS environment variable."""
+    cidrs_env = os.getenv("ALLOWED_CIDRS", "").strip()
+    if not cidrs_env:
+        return []
+    networks: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = []
+    for cidr in cidrs_env.split(","):
+        cidr_str = cidr.strip()
+        if cidr_str:
+            try:
+                networks.append(ipaddress.ip_network(cidr_str, strict=False))
+            except ValueError:
+                pass
+    return networks
+
+
+@app.middleware("http")
+async def cidr_allowlist_middleware(request: Request, call_next):
+    """Enforce CIDR-based ingress allowlisting if ALLOWED_CIDRS is configured."""
+    allowed_networks = _get_allowed_networks()
+    if allowed_networks:
+        client_ip_str: str | None = None
+        if x_forwarded_for := request.headers.get("x-forwarded-for"):
+            client_ip_str = x_forwarded_for.split(",")[0].strip()
+        elif request.client:
+            client_ip_str = request.client.host
+
+        if not client_ip_str:
+            return JSONResponse(
+                status_code=403,
+                content={"detail": "Forbidden: Unable to determine client IP"},
+            )
+
+        try:
+            client_ip = ipaddress.ip_address(client_ip_str)
+        except ValueError:
+            return JSONResponse(
+                status_code=403,
+                content={"detail": f"Forbidden: Invalid client IP '{client_ip_str}'"},
+            )
+
+        if not any(client_ip in net for net in allowed_networks):
+            return JSONResponse(
+                status_code=403,
+                content={
+                    "detail": f"Forbidden: Client IP {client_ip_str} not in allowed CIDRs"
+                },
+            )
+
+    return await call_next(request)
 
 
 # Main execution
