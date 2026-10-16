@@ -200,6 +200,10 @@ tests/load_test/.results/*.html
 tests/load_test/.results/*.csv
 .locust_env
 my_env.tfvars
+*local.tfvars
+*.local.tfvars
+*.auto.tfvars
+*.auto.tfvars.json
 .saved_chats
 .env
 .google-agents-cli/

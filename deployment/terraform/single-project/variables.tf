@@ -47,3 +47,51 @@ variable "app_sa_roles" {
     "roles/serviceusage.serviceUsageConsumer",
   ]
 }
+
+variable "gke_network_name" {
+  type        = string
+  description = "Name of the custom VPC network for private GKE"
+  default     = "k8s-agent-gke-vpc"
+}
+
+variable "gke_subnet_name" {
+  type        = string
+  description = "Name of the subnetwork for GKE nodes"
+  default     = "k8s-agent-gke-subnet"
+}
+
+variable "gke_subnet_cidr" {
+  type        = string
+  description = "Primary IP CIDR range for GKE nodes"
+  default     = "10.20.0.0/20"
+}
+
+variable "gke_pods_cidr_name" {
+  type        = string
+  description = "Name of the secondary range for GKE pods"
+  default     = "k8s-agent-gke-pods"
+}
+
+variable "gke_pods_cidr" {
+  type        = string
+  description = "Secondary IP CIDR range for GKE pods"
+  default     = "10.48.0.0/14"
+}
+
+variable "gke_services_cidr_name" {
+  type        = string
+  description = "Name of the secondary range for GKE services"
+  default     = "k8s-agent-gke-services"
+}
+
+variable "gke_services_cidr" {
+  type        = string
+  description = "Secondary IP CIDR range for GKE services"
+  default     = "10.52.0.0/20"
+}
+
+variable "gke_master_ipv4_cidr_block" {
+  type        = string
+  description = "Master control plane IPv4 CIDR range for private GKE cluster"
+  default     = "172.16.0.0/28"
+}

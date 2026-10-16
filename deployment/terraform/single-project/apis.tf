@@ -30,6 +30,7 @@ locals {
     "cloudtrace.googleapis.com",
     "telemetry.googleapis.com",
     "compute.googleapis.com",
+    "container.googleapis.com",
   ]
 }
 
